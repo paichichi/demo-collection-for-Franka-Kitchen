@@ -1,0 +1,23 @@
+task_name: slide cabinet
+env_name: FrankaKitchen-v1
+render: true
+save_path: outputs/demos/slide_cabinet.pkl
+
+ee_site_name: end_effector
+target_site_name: slide_site
+
+reach_offset: [-0.03, 0.0, 0.01]
+reach_threshold: 0.10
+grasp_approach_threshold: 0.12
+handle_center_threshold: 0.12
+gripper_close_threshold: 0.10
+
+pull_speed: 0.18
+pull_direction: [1.0, 0.0, 0.0]
+
+handle_track_k: 2.5
+handle_track_clip: 0.05
+
+stop_delta_eps: 0.0008
+stop_delta_steps: 5
+max_episode_steps: 280

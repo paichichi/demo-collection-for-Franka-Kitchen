@@ -1,0 +1,1 @@
+python collect.py --config configs/slide_cabinet.yaml
