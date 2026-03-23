@@ -2,8 +2,7 @@ import numpy as np
 from utils import get_site_rotmat, get_task_error
 
 
-def collect_one_episode(env, cfg, policy_fn):
-    obs, info = env.reset()
+def collect_one_episode(env, obs, cfg, policy_fn):
 
     task_name = cfg["task_name"]
     ee_site_name = cfg["ee_site_name"]
@@ -12,6 +11,9 @@ def collect_one_episode(env, cfg, policy_fn):
     stop_delta_eps = cfg["stop_delta_eps"]
     stop_delta_steps = cfg["stop_delta_steps"]
     verbose = cfg.get("verbose", True)
+    max_length = cfg.get("max_length", None)
+
+    init_qpos9 = env.unwrapped.data.qpos[:9].copy()
 
     observations = []
     actions = []
@@ -43,65 +45,86 @@ def collect_one_episode(env, cfg, policy_fn):
     done_by_stop_delta = False
     terminated = False
     truncated = False
-
+    hold_mode = False
+    
     for step in range(max_episode_steps):
-        if render:
-            img = env.render()
-            images.append(np.asarray(img, dtype=np.uint8))
-
-        observations.append(np.asarray(obs["observation"], dtype=np.float64))
-        achieved_goals.append(obs["achieved_goal"])
-
-        current_phase = phase
-        action, next_phase, policy_info = policy_fn(env, obs, current_phase, state, cfg)
-
-        next_obs, reward, env_terminated, env_truncated, info = env.step(action)
-
-        new_task_error = get_task_error(next_obs, task_name)
-
-        old_ag = np.asarray(obs["achieved_goal"][task_name], dtype=np.float64).reshape(-1)
-        new_ag = np.asarray(next_obs["achieved_goal"][task_name], dtype=np.float64).reshape(-1)
-        drawer_delta = np.linalg.norm(new_ag - old_ag)
-
-        if current_phase == 1:
-            if drawer_delta < stop_delta_eps:
-                state["stop_counter"] += 1
-            else:
-                state["stop_counter"] = 0
-
-            if state["stop_counter"] >= stop_delta_steps:
-                done_by_stop_delta = True
-        else:
-            state["stop_counter"] = 0
-
-        terminated = bool(done_by_stop_delta)
-        truncated = bool(env_truncated)
-
-        actions.append(action)
-        episode_task_completions.append(list(info.get("episode_task_completions", [])))
-
-        task_errors.append(new_task_error)
-        phase_history.append(current_phase)
-        drawer_deltas.append(drawer_delta)
-
-        if verbose:
-            print(
-                f"step={step:03d} | "
-                f"phase={current_phase}->{next_phase} | "
-                f"approach_error={policy_info.get('approach_error', -1):.4f} | "
-                f"handle_center_error={policy_info.get('handle_center_error', -1):.4f} | "
-                f"task_progress={policy_info.get('task_progress', 0.0):.4f} | "
-                f"motion_counter={policy_info.get('motion_counter', 0)} | "
-                f"task_error={new_task_error:.4f} | "
-                f"drawer_delta={drawer_delta:.6f} | "
-                f"completed={info.get('episode_task_completions', [])}"
-            )
-
-        phase = next_phase
-        obs = next_obs
-
-        if terminated or truncated:
-            break
+       if render:
+           img = env.render()
+           images.append(np.asarray(img, dtype=np.uint8))
+    
+       observations.append(np.asarray(obs["observation"], dtype=np.float64))
+       achieved_goals.append(obs["achieved_goal"])
+    
+       current_phase = phase
+    
+       if not hold_mode:
+           action, next_phase, policy_info = policy_fn(env, obs, current_phase, state, cfg)
+       else:
+           action = np.zeros(9, dtype=np.float32)
+           next_phase = phase
+           policy_info = {"hold_mode": True}
+    
+       next_obs, reward, env_terminated, env_truncated, info = env.step(action)
+    
+       new_task_error = get_task_error(next_obs, task_name)
+    
+       old_ag = np.asarray(obs["achieved_goal"][task_name], dtype=np.float64).reshape(-1)
+       new_ag = np.asarray(next_obs["achieved_goal"][task_name], dtype=np.float64).reshape(-1)
+       drawer_delta = np.linalg.norm(new_ag - old_ag)
+    
+       if (current_phase == 1) and (not hold_mode):
+           if drawer_delta < stop_delta_eps:
+               state["stop_counter"] += 1
+           else:
+               state["stop_counter"] = 0
+    
+           if state["stop_counter"] >= stop_delta_steps:
+               done_by_stop_delta = True
+       else:
+           state["stop_counter"] = 0
+    
+       terminated = bool(done_by_stop_delta)
+       truncated = bool(env_truncated)
+    
+       actions.append(action)
+       episode_task_completions.append(list(info.get("episode_task_completions", [])))
+       task_errors.append(new_task_error)
+       phase_history.append(current_phase)
+       drawer_deltas.append(drawer_delta)
+    
+       if verbose:
+           print(
+               f"step={step:03d} | "
+               f"phase={current_phase}->{next_phase} | "
+               f"hold_mode={hold_mode} | "
+               f"approach_error={policy_info.get('approach_error', -1):.4f} | "
+               f"handle_center_error={policy_info.get('handle_center_error', -1):.4f} | "
+               f"task_progress={policy_info.get('task_progress', 0.0):.4f} | "
+               f"motion_counter={policy_info.get('motion_counter', 0)} | "
+               f"task_error={new_task_error:.4f} | "
+               f"drawer_delta={drawer_delta:.6f} | "
+               f"completed={info.get('episode_task_completions', [])}"
+           )
+    
+       phase = next_phase
+       obs = next_obs
+    
+       # 只在 stop_delta 首次触发时切到 hold_mode
+       if (not hold_mode) and terminated:
+           if max_length is None:
+               break
+           else:
+               hold_mode = True
+               done_by_stop_delta = False
+               state["stop_counter"] = 0
+    
+       # 到达固定长度就停
+       if max_length is not None and len(actions) >= max_length:
+           break
+    
+       # 时间截断才停
+       if truncated:
+           break
 
     final_completed = episode_task_completions[-1] if len(episode_task_completions) > 0 else []
     final_task_error = task_errors[-1] if len(task_errors) > 0 else np.inf
@@ -121,29 +144,43 @@ def collect_one_episode(env, cfg, policy_fn):
     print("===========================\n")
 
     traj = {
-        "task_name": task_name,
         "observations": np.asarray(observations),
         "actions": np.asarray(actions),
         "images": np.asarray(images) if len(images) > 0 else None,
-    
-        "desired_goal": desired_goal,
-        "achieved_goal": achieved_goals,
-    
         "episode_task_completions": episode_task_completions,
-    
         "task_errors": np.asarray(task_errors),
-        "phase_history": np.asarray(phase_history),
-        "drawer_deltas": np.asarray(drawer_deltas),
-    
-        "terminated": bool(terminated),
-        "truncated": bool(truncated),
-    
-        "env_success": bool(env_success),
-        "stop_terminated": bool(done_by_stop_delta),
-        "success": bool(env_success),
-    
-        "final_task_error": float(final_task_error),
-        "length": len(actions),
+        "init_qpos9": np.asarray(init_qpos9, dtype=np.float32),
     }
+    assert len(traj["observations"]) == len(traj["actions"]), \
+        f"obs/actions length mismatch: {len(traj['observations'])} vs {len(traj['actions'])}"
+    if traj["images"] is not None:
+        assert len(traj["images"]) == len(traj["actions"]), \
+            f"images/actions length mismatch: {len(traj['images'])} vs {len(traj['actions'])}"
+
+    # traj = {
+    #     "task_name": task_name,
+    #     "observations": np.asarray(observations),
+    #     "actions": np.asarray(actions),
+    #     "images": np.asarray(images) if len(images) > 0 else None,
+    
+    #     "desired_goal": desired_goal,
+    #     "achieved_goal": achieved_goals,
+    
+    #     "episode_task_completions": episode_task_completions,
+    
+    #     "task_errors": np.asarray(task_errors),
+    #     "phase_history": np.asarray(phase_history),
+    #     "drawer_deltas": np.asarray(drawer_deltas),
+    
+    #     "terminated": bool(terminated),
+    #     "truncated": bool(truncated),
+    
+    #     "env_success": bool(env_success),
+    #     "stop_terminated": bool(done_by_stop_delta),
+    #     "success": bool(env_success),
+    
+    #     "final_task_error": float(final_task_error),
+    #     "length": len(actions),
+    # }
 
     return traj

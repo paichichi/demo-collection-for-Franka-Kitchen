@@ -89,15 +89,33 @@ def scripted_policy(env, obs, phase, state, cfg):
     if phase == 0:
         state["phase0_steps"] += 1
 
-        ee_v = 4.0 * approach_delta
+        # ee_v = 4.0 * approach_delta
 
-        # 远时快，近时慢
-        if approach_error > 0.15:
-            ee_v = np.clip(ee_v, -0.30, 0.30)
-        elif approach_error > 0.08:
-            ee_v = np.clip(ee_v, -0.16, 0.16)
+        # # 远时快，近时慢
+        # if approach_error > 0.15:
+        #     ee_v = np.clip(ee_v, -0.30, 0.30)
+        # elif approach_error > 0.08:
+        #     ee_v = np.clip(ee_v, -0.16, 0.16)
+        # else:
+        #     ee_v = np.clip(ee_v, -0.08, 0.08)
+
+        # ee_v = 6.0 * approach_delta
+
+        # if approach_error > 0.15:
+        #     ee_v = np.clip(ee_v, -0.45, 0.45)
+        # elif approach_error > 0.08:
+        #     ee_v = np.clip(ee_v, -0.25, 0.25)
+        # else:
+        #     ee_v = np.clip(ee_v, -0.12, 0.12)
+
+        ee_v = 9.0 * approach_delta
+        
+        if approach_error > 0.18:
+            ee_v = np.clip(ee_v, -0.70, 0.70)
+        elif approach_error > 0.10:
+            ee_v = np.clip(ee_v, -0.40, 0.40)
         else:
-            ee_v = np.clip(ee_v, -0.08, 0.08)
+            ee_v = np.clip(ee_v, -0.15, 0.15)
 
         qdot_arm = compute_arm_qvel_from_ee_velocity(env, ee_v, ee_site_name)
 

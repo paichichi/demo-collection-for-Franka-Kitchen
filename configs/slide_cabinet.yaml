@@ -12,12 +12,13 @@ grasp_approach_threshold: 0.12
 handle_center_threshold: 0.12
 gripper_close_threshold: 0.10
 
-pull_speed: 0.20
+pull_speed: 0.55
 pull_direction: [1.0, 0.0, 0.0]
 
 handle_track_k: 2.5
 handle_track_clip: 0.05
 
-stop_delta_eps: 0.0008
-stop_delta_steps: 2
+stop_delta_eps: 0.005
+stop_delta_steps: 5
+max_length: 50
 max_episode_steps: 280
